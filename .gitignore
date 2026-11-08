@@ -1,0 +1,11 @@
+# Build products
+*.o
+/gdisk
+/cgdisk
+/sgdisk
+/fixparts
+/dist/
+/tmp/
+
+# Android cross-build dependencies (populated by tools/build-android.sh)
+/android/deps/

@@ -1,0 +1,80 @@
+Building GPT fdisk as native Android executables
+================================================
+
+The programs can be cross-compiled with the Android NDK into stand-alone
+arm64 (or 32-bit ARM / x86_64) executables that run in Termux, an adb shell,
+or any other Android userland.  They link against bionic's libc and statically
+against libc++, so no extra runtime libraries need to be pushed to the device
+besides the executables themselves.
+
+Requirements
+------------
+* Android NDK r23 or later (tested with r29)
+* make, a host C compiler, tar, xz, curl or wget
+* About 11 MB of build dependencies plus source downloads
+
+Quick build
+-----------
+From the top of the source tree:
+
+    tools/build-android.sh
+
+The script:
+
+  1. Locates the NDK (--ndk, $ANDROID_NDK_HOME, $ANDROID_NDK_ROOT,
+     ~/Android/Sdk/ndk/*, /opt/android-ndk*, /Application/android-ndk*).
+  2. Downloads and cross-compiles popt 1.19 (sgdisk) and ncursesw 6.5
+     (cgdisk) into android/deps/<abi>/.
+  3. Builds gdisk, cgdisk, sgdisk, and fixparts with TARGET=android.
+  4. Strips and copies them to dist/android-<abi>/.
+
+Options:
+
+    --abi arm64-v8a     target ABI (default; also armeabi-v7a, x86_64)
+    --api 24            minimum Android API level (default 24, Android 7.0)
+    --ndk /path/to/ndk  NDK location
+
+Equivalent manual build (after the dependencies exist in android/deps):
+
+    make TARGET=android NDK=/path/to/android-ndk
+
+Install and run on a device
+---------------------------
+    adb push dist/android-arm64-v8a/gdisk \
+             dist/android-arm64-v8a/sgdisk \
+             dist/android-arm64-v8a/fixparts \
+             /data/local/tmp/gptfdisk/
+    adb shell chmod 755 /data/local/tmp/gptfdisk/{gdisk,sgdisk,fixparts}
+
+Reading a partition table needs no special privileges:
+
+    adb shell /data/local/tmp/gptfdisk/gdisk -l /data/local/tmp/disk.img
+
+Writing a partition table on a block device requires root:
+
+    adb shell su -c '/data/local/tmp/gptfdisk/sgdisk -p /dev/block/sda'
+
+In Termux, copy the executables into $PREFIX/bin.  cgdisk needs a real
+terminal (TERM=xterm-256color works); fallback terminfo entries for xterm,
+screen, vt100, linux, and ansi are compiled into the ncurses build, so no
+terminfo database is needed on the device.
+
+Android-specific changes
+------------------------
+* android/include/uuid/uuid.h and android/uuid_compat.cc provide the
+  libuuid functions gptfdisk needs (notably uuid_generate), since bionic
+  ships no uuid/uuid.h.
+* diskio-unix.cc now skips the BLKSSZGET ioctl for regular files.  Android
+  returns EACCES rather than ENOTTY for that ioctl on disk-image files,
+  which produced a warning on every sector-size query.  Disk images are
+  treated as having 512-byte sectors.
+* The Android build omits -luuid (replaced by the compat layer) and links
+  popt/ncurses statically from android/deps/<abi>/.
+
+Limitations
+-----------
+* The NDK's glob(3) is only available from API 28, so popt is built without
+  glob support.  gptfdisk does not use popt configuration files, so this has
+  no effect on sgdisk.
+* Minimum API level is 24 unless you build with --api 21; some libc
+  functions may then be unavailable.
